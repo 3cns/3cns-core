@@ -1,0 +1,6 @@
+[submodule "resources/assets/frontend"]
+	path = resources/assets/frontend
+	url = https://github.com/3cns/3cns-frontend.git
+[submodule "resources/assets/chat-widget"]
+	path = resources/assets/chat-widget
+	url = https://github.com/3cns/3cns-chat.git
