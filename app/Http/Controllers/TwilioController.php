@@ -194,7 +194,7 @@ class TwilioController extends Controller
     if(count($getSuperAdminTwilioCredentials)!=0){
 
       // Your Account Sid and Auth Token from twilio.com/user/account
-      try{
+      try {
 
         $sid     = $getSuperAdminTwilioCredentials->twilio_sid;
         $token   = $getSuperAdminTwilioCredentials->twilio_token;

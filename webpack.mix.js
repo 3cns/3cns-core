@@ -15,4 +15,13 @@ let mix = require('laravel-mix');
 //    .sass('resources/assets/sass/app.scss', 'public/css');
 
 mix.copyDirectory('resources/assets/frontend/dist', 'public');
+
+/**
+ * The Widget use for embedding
+ */
 mix.copyDirectory('resources/assets/chat-widget/dist', 'public/widgets/script');
+
+// /**
+//  * The Widget SocketIO Server
+//  */
+mix.copyDirectory('resources/assets/chat-widget/socket', 'socket');

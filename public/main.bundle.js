@@ -6713,15 +6713,10 @@ var reducers = {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return environment; });
-// The file contents for the current environment will overwrite these during build.
-// The build system defaults to the dev environment which uses `environment.ts`, but if you do
-// `ng build --env=prod` then `environment.prod.ts` will be used instead.
-// The list of which env maps to which file can be found in `.angular-cli.json`.
-// The file contents for the current environment will overwrite these during build.
 var environment = {
-    production: false,
-    API_BASE_URL: 'http://dev.3cns.com/api/v1/',
-    SOCKET_URL: 'http://localhost:3000'
+    production: true,
+    API_BASE_URL: 'https://dugong.telemojo.net/api/v1/',
+    SOCKET_URL: 'https://dugong.telemojo.net:3000'
 };
 //# sourceMappingURL=environment.js.map
 

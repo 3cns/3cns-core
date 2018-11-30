@@ -731,7 +731,8 @@ class ChatController extends Controller
                         ));
                     }
                     \Log::info("from =>" . $fromNumber . "body =>" . $smsBody . "To--> " . $toNumber);
-                    \Log::info('SMS Send !');
+                    \Log::info('SMS Send !', compact('file', 'fileUrl', 'smsBody'));
+
                 } catch (\Exception $e) {
                     \Log::info('SMS Not Send !' . $e->getMessage());
                     return Response::json(array(
@@ -1196,7 +1197,8 @@ class ChatController extends Controller
      */
     public function CheckWebChatMessage(Request $request)
     {
-        Log::info('15 => check web chat');
+        Log::info('15 => check web chat', $request->all());
+
         $chatRoomId = $request->chatRoomId;
         $messageBody = $request->messageBody;
         $direction = $request->direction;  // 1->Incoming 2-> outgoing
