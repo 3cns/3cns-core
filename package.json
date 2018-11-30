@@ -10,7 +10,7 @@
         "production": "cross-env NODE_ENV=production node_modules/webpack/bin/webpack.js --progress --hide-modules --config=node_modules/laravel-mix/setup/webpack.config.js",
 
 
-        "chat-socket-stage": "cross-env NODE_ENV=development node ./socket/app.js",
+        "chat-socket-stage": "cross-env NODE_ENV=stage node ./socket/app.js",
         "chat-socket-prod": "cross-env NODE_ENV=production node ./socket/app.js",
         "chat-socket-dev": "cross-env NODE_ENV=development node --inspect ./resources/assets/chat-widget/socket/app.js"
     },

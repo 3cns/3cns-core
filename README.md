@@ -22,8 +22,14 @@ The Socket Server Can be started for dev
 npm run chat-socket
 ```
 
-There are also process jobs so make sure the workers are running
+And managed w/ forever using
+```
+ NODE_ENV=stage forever start -o ./socket/logs/chat_socket.out.log -e ./socket/logs/chat_socket.out.log socket/app.js
+ NODE_ENV=production forever start -o ./socket/logs/chat_socket.out.log -e ./socket/logs/chat_socket.out.log socket/app.js
+```
 
+
+There are also process jobs so make sure the workers are running
 ```
 php artisan queue:work
 ```
@@ -37,6 +43,7 @@ php artisan queue:work
 
 
 ### WARNING
+- [ ] A Large number of methods in Chat Controller Do not return any response, they should always return something.
 - [ ] Refactor meaningless numbers into class consts so their meaning is clear.
 - [ ] Refactor if statements using count() to use empty() so it won't break w/ PHP 7.2
 - [ ] Add Recompile Script
