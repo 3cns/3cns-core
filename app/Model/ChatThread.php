@@ -12,9 +12,6 @@ class ChatThread extends Model
     const DIRECTION_INCOMING = 1;
     const DIRECTION_OUTGOING = 2;
 
-    const TYPE_MOBILE = 1;
-    const TYPE_WEB = 2;
-
     /**
      * @var boolean
      */

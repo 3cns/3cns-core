@@ -28,6 +28,12 @@ And managed w/ forever using
  NODE_ENV=production forever start -o ./socket/logs/chat_socket.out.log -e ./socket/logs/chat_socket.out.log socket/app.js
 ```
 
+### !!! Warning W/ CentOS servers you may need to run !!!
+```
+setsebool -P httpd_can_network_connect 1
+```
+So the web app can connect to the socket server using curl
+
 
 There are also process jobs so make sure the workers are running
 ```

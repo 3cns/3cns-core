@@ -63,11 +63,6 @@ class ChatController extends Controller
         $fileUrl = '';
         $converter = new MimeTypeConverter();
 
-        $twilioNumber = TwilioNumber::where('number', $toNumber)->with('getWidgetDetails')->first();
-        if (empty($twilioNumber)) {
-            return $this->errorResponse('Twilio Number Not Found !');
-        }
-
         if (isset($request->NumMedia) && $request->NumMedia > 0) {
             Log::info('message has a media file');
             $file = true;
@@ -93,44 +88,31 @@ class ChatController extends Controller
                 $fileUrl = '';
             }
         }
+        $checkTwilioNumbers = TwilioNumber::where('number', $toNumber)->with('getWidgetDetails')->first();
+        if (count($checkTwilioNumbers) != 0) {
 
-
-        $widgetUuid = data_get($twilioNumber, 'getWidgetDetails.widget_uuid');
-        $messageTrack = MessageTrack::where('widget_id', $widgetUuid)
-            ->where('from_phone_number', $fromNumber)
-            ->where('status', 1)
-            ->first();
-
-        if ( ! empty($messageTrack)) {
-            Log::info('1 ===> process Messages');
-            return $this->checkMessageCache(
-                $fromNumber,
-                $widgetUuid,
-                $messageBody,
-                $file,
-                $fileType,
-                $fileUrl
-            );
+            $checkMessageTrack = MessageTrack::where('widget_id', $checkTwilioNumbers->getWidgetDetails->widget_uuid)
+                ->where('from_phone_number', $fromNumber)
+                ->where('status', 1)->first();
+            if (count($checkMessageTrack) == 0) {
+                Log::info('1 ===> process Messages');
+                $this->checkMessageCache($fromNumber, $checkTwilioNumbers->getWidgetDetails->widget_uuid, $messageBody, $file, $fileType, $fileUrl);
+            } else {
+                Log::info('1 ===> saveOtherChat');
+                $type = '1';
+                $direction = '1';
+                $userId = null;
+                $this->saveOtherChat($fromNumber, $checkTwilioNumbers->getWidgetDetails->widget_uuid, $messageBody, $type, $direction, $userId, $file, $fileType, $fileUrl, $status = 1);
+            }
         } else {
-            Log::info('1 ===> saveOtherChat');
-            $type = '1';
-            $direction = '1';
-            $userId = null;
-            $this->saveOtherChat(
-                $fromNumber,
-                $widgetUuid,
-                $messageBody,
-                $type,
-                $direction,
-                $userId,
-                $file,
-                $fileType,
-                $fileUrl,
-                $status = 1
-            );
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => 'Twilio Number Not Found !'
+            ));
         }
-
-
     }
 
     /**
@@ -142,177 +124,110 @@ class ChatController extends Controller
 
     public function checkMessageCache($fromNumber, $widgetUuid, $messageBody, $file, $fileType, $fileUrl)
     {
-        if (empty($fromNumber) || empty($widgetUuid)) {
-            return $this->errorResponse('Missing Required data !');
-        }
-
-        Log::info('2 ===> Process for mobile message');
-
-        $checkMessageCache = MessageCache::where('from_phone_number', $fromNumber)
-            ->where('widget_uuid', $widgetUuid)
-            ->first();
-
-        $getWidgetData = Widgets::where('widget_uuid', $widgetUuid)
-            ->with('twilioNumbers', 'widgetDepartment.departmentDetails')
-            ->first();
-
-        if (empty($checkMessageCache)) {
-            Log::info('2 ===> Got a data in Message cache table for the from number');
-
-            if ($checkMessageCache->status == 1) {
-                Log::info('2 ===> check message status 1');
-                return $this->checkMessageContain(
-                    $messageBody,
-                    $fromNumber,
-                    $widgetUuid,
-                    $checkMessageCache->id,
-                    $file,
-                    $fileType,
-                    $fileUrl
-                );
-            }
-
-            elseif ($checkMessageCache->status == 6) {
-                Log::info('2 ===> check for resolved messages');
-                if (count($getWidgetData->widgetDepartment) > 1) {
-                    return $this->checkResolvedMessageCache(
-                        $messageBody,
-                        $fromNumber,
-                        $widgetUuid,
-                        $checkMessageCache->id,
-                        $file,
-                        $fileType,
-                        $fileUrl
-                    );
-                }
-
-                return $this->checkSingleResolvedMessageCache(
-                    $messageBody,
-                    $fromNumber,
-                    $widgetUuid,
-                    $checkMessageCache->id
-                );
-            }
-
-            else {
-                Log::info('2 ===> checking the message accepted and not resolved then save to the chat thread');
-                $checkMessageTrack = MessageTrack::where('widget_id', $widgetUuid)
-                    ->where('from_phone_number', $fromNumber)
-                    ->whereIn('status', [2, 5])->first();
-
-                if (empty($checkMessageTrack)) {
-                    return $this->errorResponse('Empty Track Message !');
-                }
-
-
-                if ($checkMessageTrack->status == 2) {
-                    Log::info('2 ===> check message status 2');
-                    $type = '1';
-                    $direction = '1';
-                    $userId = $checkMessageTrack->agent_id;
-
-                    return $this->saveOtherChat(
-                        $fromNumber,
-                        $widgetUuid,
-                        $messageBody,
-                        $type,
-                        $direction,
-                        $userId,
-                        $file,
-                        $fileType,
-                        $fileUrl,
-                        $checkMessageTrack->status
-                    );
-                }
-
-                elseif ($checkMessageTrack->status == 5) {
-                    Log::info('2 ===> check message status 5');
-
-                    $updateMessageTrack = MessageTrack::where('widget_id', $widgetUuid)
-                        ->where('from_phone_number', $fromNumber)
-                        ->update(['status' => 6]);
-
-                    $updateMessageCache = MessageCache::where('from_phone_number', $fromNumber)
-                        ->where('widget_uuid', $widgetUuid)
-                        ->first();
-
-                    $updateMessageCache->status = 6;
-                    $updateMessageCache->update();
-
+        if ($fromNumber != "" && $widgetUuid != "") {
+            Log::info('2 ===> Process for mobile message');
+            $checkMessageCache = MessageCache::where('from_phone_number', $fromNumber)
+                ->where('widget_uuid', $widgetUuid)->first();
+            $getWidgetData = Widgets::where('widget_uuid', $widgetUuid)->with('twilioNumbers', 'widgetDepartment.departmentDetails')->first();
+            if (count($checkMessageCache) != 0) {
+                Log::info('2 ===> Got a data in Message cache table for the from number');
+                if ($checkMessageCache->status == 1) {
+                    Log::info('2 ===> check message status 1');
+                    $this->checkMessageContain($messageBody, $fromNumber, $widgetUuid, $checkMessageCache->id, $file, $fileType, $fileUrl);
+                } elseif ($checkMessageCache->status == 6) {
+                    Log::info('2 ===> check for resolved messages');
                     if (count($getWidgetData->widgetDepartment) > 1) {
-                        $this->createSmsTemplate($fromNumber, $widgetUuid);
-                        $this->checkResolvedMessageCache(
-                            $messageBody,
-                            $fromNumber,
-                            $widgetUuid,
-                            $updateMessageCache->id,
-                            $file,
-                            $fileType,
-                            $fileUrl
-                        );
+                        $this->checkResolvedMessageCache($messageBody, $fromNumber, $widgetUuid, $checkMessageCache->id, $file, $fileType, $fileUrl);
+                    } else {
+                        $this->checkSingleResolvedMessageCache($messageBody, $fromNumber, $widgetUuid, $checkMessageCache->id);
                     }
+                    //$this->checkResolvedMessageCache($messageBody, $fromNumber, $widgetUuid, $checkMessageCache->id);
+                } else {
+                    Log::info('2 ===> checking the message accepted and not resolved then save to the chat thread');
+                    $checkMessageTrack = MessageTrack::where('widget_id', $widgetUuid)
+                        ->where('from_phone_number', $fromNumber)
+                        ->whereIn('status', [2, 5])->first();
 
-                    else {
-                        $responseMessageCacheData = $this->saveMessageCacheData(
-                            $messageBody,
-                            $updateMessageCache->id,
-                            $file,
-                            $fileType,
-                            $fileUrl
-                        );
-
-                        //$responseMessageCacheData = $this->saveMessageCacheData($messageBody, $updateMessageCache->id);
-                        //$this->singleDepartmentChat($fromNumber, $widgetUuid, $messageBody);
-                        $this->checkSingleResolvedMessageCache(
-                            $messageBody,
-                            $fromNumber,
-                            $widgetUuid,
-                            $updateMessageCache->id
-                        );
+                    if (count($checkMessageTrack) != 0) {
+                        if ($checkMessageTrack->status == 2) {
+                            Log::info('2 ===> check message status 2');
+                            $type = '1';
+                            $direction = '1';
+                            $userId = $checkMessageTrack->agent_id;
+                            $this->saveOtherChat($fromNumber, $widgetUuid, $messageBody, $type, $direction, $userId, $file, $fileType, $fileUrl, $checkMessageTrack->status);
+                        } elseif ($checkMessageTrack->status == 5) {
+                            Log::info('2 ===> check message status 5');
+                            $updateMessageTrack = MessageTrack::where('widget_id', $widgetUuid)
+                                ->where('from_phone_number', $fromNumber)->update(['status' => 6]);
+                            $updateMessageCache = MessageCache::where('from_phone_number', $fromNumber)
+                                ->where('widget_uuid', $widgetUuid)->first();
+                            $updateMessageCache->status = 6;
+                            $updateMessageCache->update();
+                            if (count($getWidgetData->widgetDepartment) > 1) {
+                                $this->createSmsTemplate($fromNumber, $widgetUuid);
+                                $this->checkResolvedMessageCache($messageBody, $fromNumber, $widgetUuid, $updateMessageCache->id, $file, $fileType, $fileUrl);
+                            } else {
+                                $responseMessageCacheData = $this->saveMessageCacheData($messageBody, $updateMessageCache->id, $file, $fileType, $fileUrl);
+                                //$responseMessageCacheData = $this->saveMessageCacheData($messageBody, $updateMessageCache->id);
+                                //$this->singleDepartmentChat($fromNumber, $widgetUuid, $messageBody);
+                                $this->checkSingleResolvedMessageCache($messageBody, $fromNumber, $widgetUuid, $updateMessageCache->id);
+                            }
+                        } else {
+                            Log::info('2 ===> ');
+                            //$this->createSmsTemplate($fromNumber, $widgetUuid);
+                            //$this->checkMessageContain($messageBody,$fromNumber,$widgetUuid,$checkMessageCache->id);
+                        }
+                    } else {
+                        Log::info('2 ===> check message track else');
                     }
                 }
 
-                else {
-                    Log::info('2 ===> ');
-                    //$this->createSmsTemplate($fromNumber, $widgetUuid);
-                    //$this->checkMessageContain($messageBody,$fromNumber,$widgetUuid,$checkMessageCache->id);
-                }
-            }
-        }
-
-        //----------------------------------------------------------
-        // Number Not Found In Message Track
-        //-------------------------------------------------------
-        else {
-            Log::info('2 ===> number not found in MessageTrack table');
-            $responseMessageCacheId = $this->saveMessageCache($fromNumber, $widgetUuid);
-
-            if ($responseMessageCacheId === false) {
-                return $this->errorResponse('data Not Saved !');
-            }
-
-            $responseMessageCacheData = $this->saveMessageCacheData(
-                $messageBody,
-                $responseMessageCacheId,
-                $file,
-                $fileType,
-                $fileUrl
-            );
-
-            if( ! $responseMessageCacheData) {
-                return $this->errorResponse('data Not Saved !');
-            }
-
-            $getWidgetData = Widgets::where('widget_uuid', $widgetUuid)
-                                    ->with('twilioNumbers', 'widgetDepartment.departmentDetails')
-                                    ->first();
-
-            if ( ! empty($getWidgetData->widgetDepartment)) {
-                $this->createSmsTemplate($fromNumber, $widgetUuid);
             } else {
-                $this->singleDepartmentChat($fromNumber, $widgetUuid, $messageBody);
+                Log::info('2 ===> number not found in MessageTrack table');
+                $responseMessageCacheId = $this->saveMessageCache($fromNumber, $widgetUuid);
+                if ($responseMessageCacheId != false) {
+
+                    $responseMessageCacheData = $this->saveMessageCacheData($messageBody, $responseMessageCacheId, $file, $fileType, $fileUrl);
+                    if ($responseMessageCacheData == true) {
+                        $getWidgetData = Widgets::where('widget_uuid', $widgetUuid)->with('twilioNumbers', 'widgetDepartment.departmentDetails')->first();
+                        if (count($getWidgetData->widgetDepartment) > 1) {
+                            $this->createSmsTemplate($fromNumber, $widgetUuid);
+                        } else {
+                            $this->singleDepartmentChat($fromNumber, $widgetUuid, $messageBody);
+                        }
+                    } else {
+
+                        return Response::json(array(
+                            'status' => false,
+                            'code' => 400,
+                            'response' => [],
+                            'error' => true,
+                            'message' => 'data Not Saved !'
+                        ));
+                    }
+
+                } else {
+
+                    return Response::json(array(
+                        'status' => false,
+                        'code' => 400,
+                        'response' => [],
+                        'error' => true,
+                        'mcheckMessageContainessage' => 'data Not Saved !'
+                    ));
+                }
             }
+        } else {
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => 'please send require data !'
+            ));
         }
+
     }
 
     /**
@@ -347,6 +262,7 @@ class ChatController extends Controller
                                 $userId = $responsesaveMessageTrack->agent_id;
                                 $fetchMessageBodyFromMessageCacheData = MessageCacheData::where('message_cache_id', $checkMessageCacheId)->where('copy', 1)->get();
                                 if (count($fetchMessageBodyFromMessageCacheData) != 0) {
+
                                     foreach ($fetchMessageBodyFromMessageCacheData as $data) {
                                         $this->saveChatThread($responsesaveMessageLog, $widgetUuid, $data->message_body, $type, $direction, $userId, $data->is_mms, $data->file_type, $data->file_url);
                                         $updateMessageCacheData = MessageCacheData::find($data->id);
@@ -362,24 +278,37 @@ class ChatController extends Controller
                                 $ch = curl_init();
                                 curl_setopt($ch, CURLOPT_URL, $url);
                                 curl_setopt($ch, CURLOPT_POST, 1);
-                                curl_setopt(
-                                    $ch,
-                                    CURLOPT_POSTFIELDS,
-                                    "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$responseChatProcess&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType"
-                                );
+                                curl_setopt($ch, CURLOPT_POSTFIELDS,
+                                    "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$responseChatProcess&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType");
 
                                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                                 $server_output = curl_exec($ch);
                                 curl_close($ch);
                             }
+
                         }
                     } else {
-                        return $this->errorResponse('data Not Saved !');
+
+                        return Response::json(array(
+                            'status' => false,
+                            'code' => 400,
+                            'response' => [],
+                            'error' => true,
+                            'message' => 'data Not Saved !'
+                        ));
                     }
                 } else {
-                    return $this->errorResponse("Department not found !!");
+
+                    return Response::json(array(
+                        'status' => false,
+                        'code' => 400,
+                        'response' => [],
+                        'error' => true,
+                        'message' => 'department not found !'
+                    ));
                 }
             } else {
+
                 $checkMessageCache = MessageCache::where('from_phone_number', $fromNumber)->where('widget_uuid', $widgetUuid)->where('status', 1)->first();
                 $responseMessageCacheData = $this->saveMessageCacheData($messageBody, $checkMessageCache->id, $file, $fileType, $fileUrl);
 
@@ -391,11 +320,24 @@ class ChatController extends Controller
                         $this->singleDepartmentChat($fromNumber, $widgetUuid, $messageBody);
                     }
                 } else {
-                    return $this->errorResponse('data Not Saved !');
+                    return Response::json(array(
+                        'status' => false,
+                        'code' => 400,
+                        'response' => [],
+                        'error' => true,
+                        'message' => 'data Not Saved !'
+                    ));
                 }
             }
         } else {
-            return $this->errorResponse('Sorry !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => 'Sorry !'
+            ));
         }
     }
 
@@ -439,21 +381,27 @@ class ChatController extends Controller
                             $ch = curl_init();
                             curl_setopt($ch, CURLOPT_URL, $url);
                             curl_setopt($ch, CURLOPT_POST, 1);
-                            curl_setopt(
-                                $ch,
-                                CURLOPT_POSTFIELDS,
-                                "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$responseChatProcess&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType"
-                            );
+                            curl_setopt($ch, CURLOPT_POSTFIELDS,
+                                "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$responseChatProcess&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType");
 
                             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                             $server_output = curl_exec($ch);
                             curl_close($ch);
                         }
+
                     }
                 } else {
-                    return $this->errorResponse('department not found !');
+
+                    return Response::json(array(
+                        'status' => false,
+                        'code' => 400,
+                        'response' => [],
+                        'error' => true,
+                        'message' => 'department not found !'
+                    ));
                 }
             } else {
+
                 $checkMessageCache = MessageCache::where('from_phone_number', $fromNumber)->where('widget_uuid', $widgetUuid)->first();
                 $responseMessageCacheData = $this->saveMessageCacheData($messageBody, $checkMessageCache->id, $file, $fileType, $fileUrl);
 
@@ -465,10 +413,18 @@ class ChatController extends Controller
                         $this->singleDepartmentChat($fromNumber, $widgetUuid, $messageBody);
                     }
                 } else {
+
                 }
             }
         } else {
-            return $this->errorResponse('Sorry !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => 'Sorry !'
+            ));
         }
     }
 
@@ -511,25 +467,43 @@ class ChatController extends Controller
                             $ch = curl_init();
                             curl_setopt($ch, CURLOPT_URL, $url);
                             curl_setopt($ch, CURLOPT_POST, 1);
-                            curl_setopt(
-                                $ch,
-                                CURLOPT_POSTFIELDS,
-                                "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$responseChatProcess&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType"
-                            );
+                            curl_setopt($ch, CURLOPT_POSTFIELDS,
+                                "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$responseChatProcess&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType");
 
                             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                             $server_output = curl_exec($ch);
                             curl_close($ch);
                         }
+
                     }
                 } else {
-                    return $this->errorResponse('Department not found !');
+
+                    return Response::json(array(
+                        'status' => false,
+                        'code' => 400,
+                        'response' => [],
+                        'error' => true,
+                        'message' => 'department not found !'
+                    ));
                 }
             } else {
-                return $this->errorResponse('Widget not found !');
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'response' => [],
+                    'error' => true,
+                    'message' => 'widget not found !'
+                ));
             }
         } else {
-            return $this->errorResponse('Sorry !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => 'Sorry !'
+            ));
         }
     }
 
@@ -581,6 +555,7 @@ class ChatController extends Controller
                                         $userId = $responsesaveMessageTrack->agent_id;
                                         $fetchMessageBodyFromMessageCacheData = MessageCacheData::where('message_cache_id', $checkMessageCache->id)->where('copy', 1)->get();
                                         if (count($fetchMessageBodyFromMessageCacheData) != 0) {
+
                                             foreach ($fetchMessageBodyFromMessageCacheData as $data) {
                                                 $this->saveChatThread($responsesaveMessageLog, $widgetUuid, $data->message_body, $type, $direction, $userId, $data->is_mms, $data->file_type, $data->file_url);
                                                 $updateMessageCacheData = MessageCacheData::find($data->id);
@@ -594,11 +569,8 @@ class ChatController extends Controller
                                         $ch = curl_init();
                                         curl_setopt($ch, CURLOPT_URL, $url);
                                         curl_setopt($ch, CURLOPT_POST, 1);
-                                        curl_setopt(
-                                            $ch,
-                                            CURLOPT_POSTFIELDS,
-                                            "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$responseChatProcess&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType"
-                                        );
+                                        curl_setopt($ch, CURLOPT_POSTFIELDS,
+                                            "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$responseChatProcess&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType");
 
                                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                                         $server_output = curl_exec($ch);
@@ -608,19 +580,43 @@ class ChatController extends Controller
                             }
                         } else {
                             Log::info('3 ==> else');
-                            return $this->errorResponse('Message cache not found !');
+                            return Response::json(array(
+                                'status' => false,
+                                'code' => 400,
+                                'error' => true,
+                                'response' => [],
+                                'message' => 'Message cache not found !'
+                            ));
                         }
                     } else {
                         Log::info('3 ==> else');
-                        return $this->errorResponse('department not found !');
+                        return Response::json(array(
+                            'status' => false,
+                            'code' => 400,
+                            'error' => true,
+                            'response' => [],
+                            'message' => 'department not found !'
+                        ));
                     }
                 }
             } else {
                 Log::info('3 ==> else');
-                return $this->errorResponse('Data not found !');
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'Data not found !'
+                ));
             }
         } else {
-            return $this->errorResponse('Sorry paramiters are not present in the request !');
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
     }
 
@@ -683,10 +679,22 @@ class ChatController extends Controller
                 $this->sendSms($smsBody, $fromNumber, $toNumber, $file, $fileType, $fileUrl);
             } else {
                 Log::info('3 ==> else');
-                return $this->errorResponse('Data not found !');
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'Data not found !'
+                ));
             }
         } else {
-            return $this->errorResponse('Sorry paramiters are not present in the request !');
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
     }
 
@@ -710,33 +718,49 @@ class ChatController extends Controller
                     $clientsms = new Client($sid, $token);
                     if ($file) {
                         $message = $clientsms->messages->create(
-                            $toNumber,
-                            array(
+                            $toNumber, array(
                             "from" => $fromNumber,
                             "body" => $smsBody,
                             "mediaUrl" => $fileUrl
-                            )
-                        );
+                        ));
                     } else {
                         $message = $clientsms->messages->create(
-                            $toNumber,
-                            array(
+                            $toNumber, array(
                             "from" => $fromNumber,
                             "body" => $smsBody
-                            )
-                        );
+                        ));
                     }
                     \Log::info("from =>" . $fromNumber . "body =>" . $smsBody . "To--> " . $toNumber);
-                    \Log::info('SMS Send !', compact('file', 'fileUrl', 'smsBody'));
+                    \Log::info('SMS Send !');
                 } catch (\Exception $e) {
                     \Log::info('SMS Not Send !' . $e->getMessage());
-                    return $this->errorResponse($e->getMessage());
+                    return Response::json(array(
+                        'error' => true,
+                        'code' => 400,
+                        'status' => false,
+                        'response' => [],
+                        'message' => $e->getMessage()
+                    ));
                 }
             } else {
-                return $this->errorResponse('Sorry Data not found !');
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'Sorry Data not found !'
+                ));
             }
         } else {
-            return $this->errorResponse('Sorry paramiters are not present in the request !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
     }
 
@@ -758,18 +782,50 @@ class ChatController extends Controller
                         $message->to($checkUser->email, $checkUser->first_name)->subject('3c chat notification');
                     });
                     if (Mail::failures()) {
-                        return $this->errorResponse('Try Again!!');
+
+                        return Response()->json([
+                            'code' => 400,
+                            'error' => true,
+                            'status' => false,
+                            'response' => [],
+                            'message' => 'Try Again!!'
+                        ]);
+
                     } else {
-                        return $this->successResponse('Mail Successfully Send To Your Registered Email!!');
+
+                        return Response()->json([
+                            'code' => 200,
+                            'error' => false,
+                            'status' => true,
+                            'response' => [],
+                            'message' => 'Mail Successfully Send To Your Registered Email!!'
+                        ]);
+
                     }
                 } catch (\Exception $e) {
                     Log::info('can not able to send mail');
                 }
             } else {
-                return $this->errorResponse('No User Found !');
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'No User Found !'
+                ));
+
             }
         } else {
-            return $this->errorResponse('No User Found !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'No User Found !'
+            ));
+
         }
     }
 
@@ -793,7 +849,14 @@ class ChatController extends Controller
                 return false;
             }
         } else {
-            return $this->errorResponse('Sorry paramiters are not present in the request !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
     }
 
@@ -820,10 +883,15 @@ class ChatController extends Controller
                 return false;
             }
         } else {
-            return $this->errorResponse('Sorry paramiters are not present in the request !');
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
     }
-
 
     /**
      * function to save message_track table
@@ -846,8 +914,16 @@ class ChatController extends Controller
             } else {
                 return false;
             }
+
         } else {
-            return $this->errorResponse('Sorry paramiters are not present in the request !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
     }
 
@@ -869,15 +945,26 @@ class ChatController extends Controller
                 $saveContactList->name = $name;
                 $saveContactList->email = $email;
                 if ($saveContactList->save()) {
+
                     return $saveContactList->id;
                 } else {
+
                     return false;
                 }
             } else {
+
                 return $checkContactList->id;
             }
+
         } else {
-            return $this->errorResponse('Sorry paramiters are not present in the request !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
     }
 
@@ -893,19 +980,30 @@ class ChatController extends Controller
         if ($saveContactListId != "" && $widgetUuid != "") {
             $checkMessageLog = MessageLog::where('widget_id', $widgetUuid)->where('contact_list_id', $saveContactListId)->where('status', 3)->first();
             if (count($checkMessageLog) == 0) {
+
                 $saveMessageLog = new MessageLog;
                 $saveMessageLog->widget_id = $widgetUuid;
                 $saveMessageLog->contact_list_id = $saveContactListId;
                 if ($saveMessageLog->save()) {
+
                     return $saveMessageLog->id;
                 } else {
+
                     return false;
                 }
             } else {
                 return $checkMessageLog->id;
+
             }
         } else {
-            return $this->errorResponse('Sorry paramiters are not present in the request !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
     }
 
@@ -919,6 +1017,7 @@ class ChatController extends Controller
     public function saveChatThread($responseSaveContactList, $widgetUuid, $messageBody, $type, $direction, $userId, $file, $fileType, $fileUrl)
     {
         if ($responseSaveContactList != "" && $widgetUuid != "" && ($messageBody != "" || $file)) {
+
             $saveChatThread = new ChatThread;
             $saveChatThread->message_log_id = $responseSaveContactList;
             $saveChatThread->widget_id = $widgetUuid;
@@ -931,6 +1030,7 @@ class ChatController extends Controller
             $saveChatThread->file_type = $fileType;
             $saveChatThread->file_url = $fileUrl;
             if ($saveChatThread->save()) {
+
                 return $saveChatThread;
             } else {
                 return false;
@@ -946,69 +1046,63 @@ class ChatController extends Controller
      */
     public function saveOtherChat($fromNumber, $widget_uuid, $messageBody, $type, $direction, $userId = null, $file, $fileType, $fileUrl, $status)
     {
-        // logger("saveOtherChat", [
-        //     "IS_VALID" => ($fromNumber != "") && ($widget_uuid != ""),
-        //     $fromNumber, $widget_uuid, $messageBody, $type, $direction, $userId = null, $file, $fileType, $fileUrl, $status
-        // ]);
+        if ($fromNumber != "" && $widget_uuid != "") {
+            $getContactListId = ContactList::where('widget_id', $widget_uuid)->where('phone', $fromNumber)->select('id')->first();
+            if (count($getContactListId) != 0) {
+                $messageLogId = MessageLog::where('contact_list_id', $getContactListId->id)->where('status', $status)->select('id')->first();
+                if ($messageLogId) {
+                    $saveChatThread = new ChatThread;
+                    $saveChatThread->message_log_id = $messageLogId->id;
+                    $saveChatThread->widget_id = $widget_uuid;
+                    $saveChatThread->chat_thread = $messageBody;
+                    $saveChatThread->type = $type;
+                    $saveChatThread->user_id = $userId;
+                    $saveChatThread->direction = $direction;
+                    $saveChatThread->chat_type = $type;
+                    $saveChatThread->is_mms = $file;
+                    $saveChatThread->file_type = $fileType;
+                    $saveChatThread->file_url = $fileUrl;
+                    if ($saveChatThread->save()) {
+                        //call to node API
+                        $getChatInfo = MessageTrack::where('message_id', $messageLogId->id)->select('agent_id', 'chat_room_id', 'status')->first();
+                        if ($type == 1 && $getChatInfo) {
+                            /** call to node API for sending this message to the frontend chat secticon */
+                            $time = date("Y-m-d H:i:s");
+                            $url = url('/') . ':3000/mobile-chat';
+                            $ch = curl_init();
+                            curl_setopt($ch, CURLOPT_URL, $url);
+                            curl_setopt($ch, CURLOPT_POST, 1);
+                            curl_setopt($ch, CURLOPT_POSTFIELDS,
+                                "messageBody=$messageBody&direction=1&user=$fromNumber&chatRoomId=$getChatInfo->chat_room_id&time=$time&callFrom=shelf&file=$file&fileURL=$fileUrl&fileType=$fileType");
 
-        if (($fromNumber == "") || ($widget_uuid == "")) {
-            \Log::info('Missing Required Fields From Number or Widget UUID');
-            return false;
+                            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                            $server_output = curl_exec($ch);
+                            curl_close($ch);
+                        }
+                        \Log::info('Chat message saved !');
+                        return true;
+                    } else {
+                        Log::info('Chat message not saved ! chat thread not saved');
+                        return false;
+                    }
+                } else {
+                    \Log::info('Chat message not saved ! Message Log not found');
+                    return false;
+                }
+            } else {
+                \Log::info('Chat message not saved ! Contact list not found');
+                return false;
+            }
+        } else {
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Sorry paramiters are not present in the request !'
+            ));
         }
-
-        $getContactList = ContactList::where('widget_id', $widget_uuid)->where('phone', $fromNumber)->select('id')->first();
-        if (empty($getContactList)) {
-            \Log::info('Chat message not saved ! Contact list not found');
-            return false;
-        }
-
-        $messageLog = MessageLog::where('contact_list_id', $getContactList->id)->where('status', $status)->select('id')->first();
-        if (empty($messageLog)) {
-            \Log::info('Chat message not saved ! Message Log not found');
-            return false;
-        }
-
-        $saveChatThread = new ChatThread;
-        $saveChatThread->message_log_id = $messageLog->id;
-        $saveChatThread->widget_id = $widget_uuid;
-        $saveChatThread->chat_thread = $messageBody;
-        $saveChatThread->type = $type;
-        $saveChatThread->user_id = $userId;
-        $saveChatThread->direction = $direction;
-        $saveChatThread->chat_type = $type;
-        $saveChatThread->is_mms = $file;
-        $saveChatThread->file_type = $fileType;
-        $saveChatThread->file_url = $fileUrl;
-
-        if ( ! $saveChatThread->save()) {
-            Log::info('Chat message not saved ! chat thread not saved');
-            return false;
-        }
-
-
-        //call to node API
-        $messageTrack = MessageTrack::where('message_id', $messageLog->id)->select('agent_id', 'chat_room_id', 'status')->first();
-        if ($type == 1 && $messageTrack) {
-            /** call to node API for sending this message to the frontend chat secticon */
-            $chatRoomId = $messageTrack->chat_room_id;
-            $time = date("Y-m-d H:i:s");
-            $url = url('/') . ':3000/mobile-chat';
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt(
-                $ch,
-                CURLOPT_POSTFIELDS,
-                "messageBody={$messageBody}&direction=1&user={$fromNumber}&chatRoomId={$chatRoomId}&time={$time}&callFrom=shelf&file={$file}&fileURL={$fileUrl}&fileType={$fileType}"
-            );
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $server_output = curl_exec($ch);
-            curl_close($ch);
-            \Log::info("Chat message sent to room {$chatRoomId}!");
-
-        }
-        \Log::info('Chat message saved !');
-        return true;
     }
 
     /**
@@ -1028,7 +1122,6 @@ class ChatController extends Controller
         $widgetUuid = $request->widgetUuid;
 
         $checkMessageTrack = MessageTrack::where('widget_id', $widgetUuid)->where('from_phone_number', $fromNumber)->where('status', 1)->first();
-
         if (count($checkMessageTrack) == 0) {
             $saveMessageTrack = new MessageTrack;
             $saveMessageTrack->widget_id = $widgetUuid;
@@ -1036,17 +1129,13 @@ class ChatController extends Controller
             $saveMessageTrack->from_phone_number = $fromNumber;
             $saveMessageTrack->message_type = 2; // Message type 1 ->Mobile SMS 2->Web Chat Message
             $saveMessageTrack->status = 1;
-
-
-            logger("Saving", [$saveMessageTrack]);
-
             if ($saveMessageTrack->save()) {
-                logger("Saved", [$saveMessageTrack]);
 
                 $responsesaveContactList = $this->saveContactList($widgetUuid, $fromNumber, $name, $email);
                 if ($responsesaveContactList != 0) {
                     $responsesaveMessageLog = $this->saveMessageLog($responsesaveContactList, $widgetUuid);
                     if ($responsesaveMessageLog != false) {
+
                         $updateMessageTrack = MessageTrack::where('id', $saveMessageTrack->id)->update(['message_id' => $responsesaveMessageLog]);
                         $chatRoomId = $this->chatProcess($fromNumber, $widgetUuid);   //calling chat process
                         //call a funtion to fetch  all the agents with there corrosponding room id and status
@@ -1055,17 +1144,48 @@ class ChatController extends Controller
                         $response['email'] = $email;
                         $response['name'] = $name;
 
-                        return $this->successResponse('Chatroom No !', $response);
+                        return Response::json(array(
+                            'status' => true,
+                            'code' => 200,
+                            'error' => false,
+                            'response' => $response,
+                            'message' => 'Chatroom No !'
+                        ));
+
                     }
+
                 } else {
-                    return $this->errorResponse('Something Went wrong !');
+
+                    return Response::json(array(
+                        'status' => false,
+                        'code' => 400,
+                        'error' => true,
+                        'response' => [],
+                        'message' => 'Something Went wrong !'
+                    ));
                 }
+
             } else {
-                return $this->errorResponse('Something Went wrong !');
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'Something Went wrong !'
+                ));
             }
         } else {
-            return $this->errorResponse('No data found !');
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'No Data Found !'
+            ));
         }
+
+
     }
 
     /**
@@ -1076,21 +1196,16 @@ class ChatController extends Controller
      */
     public function CheckWebChatMessage(Request $request)
     {
-        Log::info('15 => check web chat', $request->all());
-
+        Log::info('15 => check web chat');
         $chatRoomId = $request->chatRoomId;
         $messageBody = $request->messageBody;
         $direction = $request->direction;  // 1->Incoming 2-> outgoing
         $file = $request->file;
         $fileType = $request->fileType;
         $fileUrl = $request->fileURL;
-
         if ($chatRoomId != "") {
             $checkMessageTrack = MessageTrack::where('chat_room_id', $chatRoomId)->first();
-
-            Log::info('15 => Looking For Message Track', [$checkMessageTrack]);
-
-            if ( ! empty($checkMessageTrack)) {
+            if (count($checkMessageTrack) != 0) {
 
                 if (isset($request->callFrom) && $request->callFrom != null && $request->callFrom == 'shelf') {
                     $response = ['message' => $messageBody,
@@ -1102,11 +1217,8 @@ class ChatController extends Controller
                         'fileType' => $fileType,
                         'fileUrl' => $fileUrl
                     ];
-                }
-
-                else {
-                    if ( $direction == 1 || $direction == 2 ) {
-
+                } else {
+                    if ($direction == 1 || $direction == 2) {
                         if ($checkMessageTrack->message_type == 1) {
                             $getWidgetPhoneNumber = Widgets::where('widget_uuid', $checkMessageTrack->widget_id)->with('twilioNumbers')->first();
                             $widgetPhoneNumber = $getWidgetPhoneNumber->twilioNumbers->prefix . $getWidgetPhoneNumber->twilioNumbers->number;
@@ -1114,7 +1226,6 @@ class ChatController extends Controller
                             Log::info('15 => send sms');
                             $this->sendSms($messageBody, $checkMessageTrack->from_phone_number, $widgetPhoneNumber, $file, $fileType, $fileUrl);
                         }
-
                         $messageId = $checkMessageTrack->message_id;
                         $userId = $checkMessageTrack->agent_id;
                         $widgetUuid = $checkMessageTrack->widget_id;
@@ -1124,12 +1235,9 @@ class ChatController extends Controller
                         if ($responseSaveChatThread->direction == 1) {
                             //user contain client info
                             $getClientInfo = MessageLog::where('id', $responseSaveChatThread->message_log_id)->with('clientName')->first();
-
-                            if ($getClientInfo->clientName->name != "") {
-                                $user = $getClientInfo->clientName->name;
-                            } else {
-                                $user = $getClientInfo->clientName->phone;
-                            }
+                            $user = data_get($getClientInfo, "clientName.name",
+                                data_get($getClientInfo, "clientName.phone", "Unknown")
+                            );
                         }
                         if ($responseSaveChatThread->direction == 2) {
                             //user contain Agent info
@@ -1137,16 +1245,14 @@ class ChatController extends Controller
                             $user = $getAgentInfo->agentInfo->first_name;
                         }
 
-                        $response = [
-                            'message' => $responseSaveChatThread->chat_thread,
+                        $response = ['message' => $responseSaveChatThread->chat_thread,
                             'direction' => $responseSaveChatThread->direction,
                             'roomNo' => $checkMessageTrack->chat_room_id,
                             'user' => $user,
                             'created_at' => $responseSaveChatThread->created_at,
                             'isMMS' => $file,
                             'fileType' => $fileType,
-                            'fileUrl' => $fileUrl
-                        ];
+                            'fileUrl' => $fileUrl];
 
                     } elseif ($direction == 4) {
                         $file = false;
@@ -1166,12 +1272,32 @@ class ChatController extends Controller
                             'fileUrl' => $fileUrl];
                     }
                 }
-                return $this->successResponse('Message sent !', $response);
+                return Response::json(array(
+                    'status' => true,
+                    'code' => 200,
+                    'error' => false,
+                    'response' => $response,
+                    'message' => 'Message sent !'
+                ));
             } else {
-                return $this->errorResponse('Message Not send !');
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'Message Not send !'
+                ));
             }
         } else {
-            return $this->errorResponse('No data found !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'No data found !'
+            ));
         }
     }
 
@@ -1196,17 +1322,40 @@ class ChatController extends Controller
                     $countAgentDepartment = DepartmentAgentMap::where('department_id', $departmentId)->count();
                     $responsesaveMessageForwardCount = $this->saveMessageForwardCount($widgetUuid, $countAgentDepartment, $messageId);
                     if ($responsesaveMessageForwardCount != false) {
+
                         $this->saveMessageAgentTrack($responsesaveMessageForwardCount, $chatRoomId, $widgetUuid, $messageId, $departmentId);
                     }
                 } else {
-                    return $this->errorResponse('Something went wrong !');
+
+                    return Response::json(array(
+                        'status' => false,
+                        'code' => 400,
+                        'error' => true,
+                        'response' => [],
+                        'message' => 'Something went wrong !'
+                    ));
                 }
                 return $chatRoomId;
+
             } else {
-                return $this->errorResponse('Something went wrong !');
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'Something went wrong !'
+                ));
             }
         } else {
-            return $this->errorResponse('Something went wrong !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Something went wrong !'
+            ));
         }
     }
 
@@ -1224,7 +1373,9 @@ class ChatController extends Controller
         $randomString = '';
 
         for ($i = 0; $i < $length; $i++) {
+
             $randomString .= $characters[rand(0, $charactersLength - 1)];
+
         }
 
         return $randomString;
@@ -1239,6 +1390,7 @@ class ChatController extends Controller
     public function saveMessageForwardCount($widgetUuid, $countAgentDepartment, $messageId)
     {
         if ($widgetUuid != "" && $countAgentDepartment != "" && $messageId != "") {
+
             $saveMessageForwardCount = new MessageForwardCounter;
             $saveMessageForwardCount->widget_id = $widgetUuid;
             $saveMessageForwardCount->agent_count = $countAgentDepartment;
@@ -1247,12 +1399,21 @@ class ChatController extends Controller
             $saveMessageForwardCount->status = 1;
             if ($saveMessageForwardCount->save()) {
                 return $saveMessageForwardCount->id;
+
             } else {
                 return false;
             }
         } else {
-            return $this->errorResponse('Something went wrong !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Something went wrong !'
+            ));
         }
+
     }
 
     /**
@@ -1265,6 +1426,7 @@ class ChatController extends Controller
     {
         Log::info('Inside saveMessageAgentTrack');
         if ($responsesaveMessageForwardCount != "" && $chatRoomId != "" && $widgetUuid != "" && $messageId != "" && $departmentId != "") {
+
             $getAllAgentId = DepartmentAgentMap::where('department_id', $departmentId)->select('user_id')->get();
             if (count($getAllAgentId) != 0) {
                 foreach ($getAllAgentId as $agentId) {
@@ -1276,16 +1438,39 @@ class ChatController extends Controller
                     $saveMessageAgentTrack->message_forward_counter_id = $responsesaveMessageForwardCount;
                     $saveMessageAgentTrack->status = 1;
                     if ($saveMessageAgentTrack->save()) {
+
                         $this->sendNotificationToAgents($saveMessageAgentTrack->agent_id, $saveMessageAgentTrack->widget_id);
                     } else {
-                        return $this->errorResponse('Something went wrong !');
+
+                        return Response::json(array(
+                            'status' => false,
+                            'code' => 400,
+                            'error' => true,
+                            'response' => [],
+                            'message' => 'Something went wrong !'
+                        ));
                     }
+
                 }
             } else {
-                return $this->errorResponse('Something went wrong !');
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'Something went wrong !'
+                ));
             }
         } else {
-            return $this->errorResponse('Something went wrong !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Something went wrong !'
+            ));
         }
     }
 
@@ -1337,7 +1522,14 @@ class ChatController extends Controller
                 }
             }
         } else {
-            return $this->errorResponse('Message not Send,Something went wrong !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'Message not Send,Something went wrong !'
+            ));
         }
     }
 
@@ -1355,18 +1547,19 @@ class ChatController extends Controller
 
         $checkMessageAgentTrack = MessageAgentTrack::where('agent_id', $agentId)->where('chat_room_id', $chatRoomId)->first();
 
-        logger("Closing", $request->all());
-
         if (count($checkMessageAgentTrack) != 0) {
             if ($status == 2) {   // Accept status Scenario
+
                 $responseAcceptChat = $this->acceptChat($checkMessageAgentTrack);
                 return $responseAcceptChat;
             }
             if ($status == 3) {  // Reject status Scenario
+
                 $responseRejectChat = $this->rejectChat($checkMessageAgentTrack);
                 return $responseRejectChat;
             }
             if ($status == 4) {  // Transfer Status Scenario
+
                 $departmentId = $request->departmentId;   // for transfer the the chat to a new department
                 $toAgentId = $request->toAgentId;  // for transfer the the chat to a new department
                 $responseTransferChat = $this->transferChat($checkMessageAgentTrack, $departmentId, $toAgentId);
@@ -1375,11 +1568,27 @@ class ChatController extends Controller
             if ($status == 5) {  // Resolve Status Scenario
                 $responseresolveChat = $this->resolveChat($checkMessageAgentTrack);
                 return $responseresolveChat;
+
             } else {
-                return $this->errorResponse('Sorry wrong status,Something went wrong !');
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'error' => true,
+                    'response' => [],
+                    'message' => 'Sorry wrong status,Something went wrong !'
+                ));
             }
+
         } else {
-            return $this->errorResponse('No data found !');
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'message' => 'No data found !'
+            ));
         }
     }
 
@@ -1424,7 +1633,13 @@ class ChatController extends Controller
 
         $response = ['agentId' => $agentId, 'chatRoomId' => $chatRoomId, 'status' => $status];
 
-        return $this->successResponse('Agent and chatroom !', $response);
+        return Response::json(array(
+            'status' => true,
+            'code' => 200,
+            'error' => true,
+            'response' => $response,
+            'message' => 'Agent and chatroom !'
+        ));
     }
 
     /**
@@ -1443,23 +1658,16 @@ class ChatController extends Controller
         $messageForwardCountId = $checkMessageAgentTrack->message_forward_counter_id;
         $status = 3;    //reject Scenario
 
-        logger("Rejecting Chat" , [$checkMessageAgentTrack]);
-
         $updateMessageAgentTrack = MessageAgentTrack::where('id', $messageAgentTrackId)->update(['status' => $status]);
         $countRejectedChat = MessageAgentTrack::where('message_id', $messageId)->where('chat_room_id', $chatRoomId)->where('status', $status)->count();
         //$updateMessageTrack      = MessageTrack::where('message_id',$messageId)->update(['agent_id'=>$agentId,'status'=>$status]);
         $checkMessageForwardCounter = MessageForwardCounter::where('id', $messageForwardCountId)->first();
         if ($checkMessageForwardCounter->agent_count == $countRejectedChat) {
+
             $checkMessageForwardCounter->count_init = ($checkMessageForwardCounter->count_init + 1);
             $checkMessageForwardCounter->update();
-
-            // message track status will be 1 for again inicating the other messages
-            $updateMessageTrack = MessageTrack::where('message_id', $messageId)->update(['status' => 1]);
-
-            // update this table for reinicate the chat request to agents
-            $updateMessageAgentTrack = MessageAgentTrack::where('message_forward_counter_id', $checkMessageForwardCounter->id)->update(['status' => 1]);
-
-
+            $updateMessageTrack = MessageTrack::where('message_id', $messageId)->update(['status' => 1]); //message track status will be 1 for again inicating the other messages
+            $updateMessageAgentTrack = MessageAgentTrack::where('message_forward_counter_id', $checkMessageForwardCounter->id)->update(['status' => 1]); //update this table for reinicate the chat request to agents
             $this->inicateRejectNotificationToAgents($checkMessageForwardCounter->id, $widgetUuid);
 
             //call to node API
@@ -1473,8 +1681,14 @@ class ChatController extends Controller
             curl_close($ch);
 
             $response = ['agentId' => $agentId, 'chatRoomId' => $chatRoomId, 'status' => $status];
+            return Response::json(array(
+                'status' => true,
+                'code' => 200,
+                'error' => false,
+                'response' => $response,
+                'message' => 'Agent and chatroom with Reject Status !'
+            ));
 
-            return $this->successResponse('Agent and chatroom with Reject Status !', $response);
         } else {
             //call to node API
             $url = url('/') . ':3000/send-rooms';
@@ -1487,7 +1701,13 @@ class ChatController extends Controller
             curl_close($ch);
 
             $response = ['agentId' => $agentId, 'chatRoomId' => $chatRoomId, 'status' => $status];
-            return $this->successResponse('Agent and chatroom with Reject Status !', $response);
+            return Response::json(array(
+                'status' => true,
+                'code' => 200,
+                'error' => false,
+                'response' => $response,
+                'message' => 'Agent and chatroom with Reject Status !'
+            ));
         }
     }
 
@@ -1501,17 +1721,33 @@ class ChatController extends Controller
     public function inicateRejectNotificationToAgents($messageForwardCounterId, $widgetUuid)
     {
         if ($messageForwardCounterId != "" && $widgetUuid != "") {
+
             $getAgents = MessageAgentTrack::where('message_forward_counter_id', $messageForwardCounterId)->get();
             if (count($getAgents) != 0) {
                 foreach ($getAgents as $agent) {
                     $this->sendNotificationToAgents($agent->agent_id, $widgetUuid);
                 }
             } else {
-                return $this->errorResponse("Something went wrong !");
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'response' => [],
+                    'error' => true,
+                    'message' => 'Something went wrong !'
+                ));
             }
         } else {
-            return $this->errorResponse("Something went wrong !");
+
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => 'Something went wrong !'
+            ));
         }
+
     }
 
     /**
@@ -1582,11 +1818,25 @@ class ChatController extends Controller
                 curl_close($ch);
 
                 $response = ['agentId' => $fromAgentId, 'chatRoomId' => $chatRoomId, 'status' => $status];
-                return  $this->successResponse('Transfer to a new Agent!', $response);
+                return Response::json(array(
+                    'status' => true,
+                    'code' => 200,
+                    'response' => $response,
+                    'error' => false,
+                    'message' => 'Transfer to a new Agent!'
+                ));
             } else {
-                return $this->errorResponse('Department Not Found !');
+
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'response' => [],
+                    'error' => true,
+                    'message' => 'Department Not Found !'
+                ));
             }
         } elseif ($toAgentId != "" && $fromAgentId != "") {
+
             $getMessageAgentTrackId = MessageAgentTrack::where('agent_id', $fromAgentId)->where('chat_room_id', $chatRoomId)->where('widget_id', $widgetUuid)->select('id', 'message_id')->first();
             $updateAgentFromMessageAgentTrack = MessageAgentTrack::where('agent_id', $fromAgentId)->where('chat_room_id', $chatRoomId)->where('widget_id', $widgetUuid)->update(['agent_id' => $toAgentId, 'status' => 1]);
             /** Save transfer agent log */
@@ -1626,11 +1876,24 @@ class ChatController extends Controller
             $server_output = curl_exec($ch);
             curl_close($ch);
 
-
-            return $this->successResponse('Transfer to a new Agent!', $response);
+            return Response::json(array(
+                'status' => true,
+                'code' => 200,
+                'response' => $response,
+                'error' => false,
+                'message' => 'Transfer to a new Agent!'
+            ));
         } else {
-            return $this->errorResponse('Sorry Department and Agent are not there !');
+
+            return Response::json(array(
+                'status' => true,
+                'code' => 400,
+                'response' => [],
+                'error' => false,
+                'message' => 'Sorry Department and Agent are not there !'
+            ));
         }
+
     }
 
     /**
@@ -1686,23 +1949,23 @@ class ChatController extends Controller
         }
         $allAgents = [];
         foreach ($AgentCreateArray as $AgentId => $list) {
+
             $rooms = MessageAgentTrack::where('agent_id', $AgentId)->with('clientInfo.clientName', 'allChat.agentInfo', 'getTransferLog')->orderBy('id', 'desc')->get();
             /** get chat of all agents*/
 
             $allRooms = [];
             $agents['agent_id'] = $AgentId;
             foreach ($rooms as $room) {
+
                 $agentRooms['name'] = $room->chat_room_id;
                 $agentRooms['status'] = $room->status;
                 $agentRooms['chat_time'] = $room->created_at;
 
-                $client_name = data_get($room, 'clientInfo.clientName.name',
-                    data_get($room, 'clientInfo.clientName.name', "Unknown")
+                $agentRooms['client_name'] = data_get($room, "clientInfo.clientName.name",
+                     data_get($room, "clientInfo.clientName.phone","Unknown")
                 );
 
-                $agentRooms['client_name'] = $client_name;
-
-                $getTransferChats = AgentTransferHistory::where('chat_room_id', $room->chat_room_id)->orderBy('created_at', 'DESC')->get();
+                $getTransferChats = AgentTransferHistory::where('chat_room_id', $room->chat_room_id)->orderBy('created_at','DESC')->get();
                 if (count($getTransferChats) > 0) {
                     $getAgentName = Users::where('id', $getTransferChats[0]->transfer_from_agent_id)->select('first_name', 'last_name')->first();
                     $agentRooms['transfer_from_agent'] = $getAgentName->first_name . ' ' . $getAgentName->last_name;
@@ -1725,21 +1988,31 @@ class ChatController extends Controller
                     $agentRooms['chats'][$key]['isMMS'] = $chat->is_mms;
                     $agentRooms['chats'][$key]['fileType'] = $chat->file_type;
                     $agentRooms['chats'][$key]['fileUrl'] = $chat->file_url;
+
                     if ($chat->direction == 1) {
-                        $agentRooms['chats'][$key]['user'] = $client_name;
+                        $agentRooms['chats'][$key]['user'] = data_get($room, "clientInfo.clientName.name",
+                             data_get($room, "clientInfo.clientName.phone","Unknown")
+                        );
                     }
                     if ($chat->direction == 2) {
-                        $agentRooms['chats'][$key]['user'] = data_get($chat, 'agentInfo.first_name', "Unknown");
+                        $agentRooms['chats'][$key]['user'] = $chat->agentInfo->first_name;
                     }
                     $agentRooms['chats'][$key]['created_at'] = $chat->created_at;
                 }
                 $allRooms[] = $agentRooms;
+
             }
             $agents['rooms'] = $allRooms;
             $allAgents[] = $agents;
         }
 
-        return $this->successResponse("Agent with chatrooms !", $allAgents);
+        return Response::json(array(
+            'status' => true,
+            'error' => false,
+            'code' => 200,
+            'response' => $allAgents,
+            'message' => 'Agents with chatrooms !'
+        ));
     }
 
     /**
@@ -1778,9 +2051,21 @@ class ChatController extends Controller
                 'message' => 'File Uploaded'
             ));
         } catch (\Exception $e) {
-            return $this->errorResponse($e->getMessage());
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => $e->getMessage()
+            ));
         } catch (ModelNotFoundException $e) {
-            return $this->errorResponse($e->getMessage());
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => $e->getMessage()
+            ));
         }
     }
 
@@ -1856,10 +2141,12 @@ class ChatController extends Controller
                 $saveMessageTrack->message_type = 1; // Message type 1 ->Mobile SMS 2->Web Chat Message
                 $saveMessageTrack->status = 1;
                 if ($saveMessageTrack->save()) {
+
                     $responsesaveContactList = $this->saveContactList($widgetUIID, $toNumber, $name, $email);
                     if ($responsesaveContactList != 0) {
                         $responsesaveMessageLog = $this->saveMessageLog($responsesaveContactList, $widgetUIID);
                         if ($responsesaveMessageLog != false) {
+
                             $updateMessageTrack = MessageTrack::where('id', $saveMessageTrack->id)->update(['message_id' => $responsesaveMessageLog]);
 
                             // $chatRoomId = $this->chatProcess($toNumber, $widgetUIID,1);   //calling chat process
@@ -1880,6 +2167,7 @@ class ChatController extends Controller
 //                                    }
                                     // save message forward
                                     if ($widgetUIID != "" && $countAgentDepartment != "" && $messageId != "") {
+
                                         $saveMessageForwardCount = new MessageForwardCounter;
                                         $saveMessageForwardCount->widget_id = $widgetUIID;
                                         $saveMessageForwardCount->agent_count = $countAgentDepartment;
@@ -1890,6 +2178,7 @@ class ChatController extends Controller
                                             // return $saveMessageForwardCount->id;
 
                                             if ($saveMessageForwardCount->id != "" && $chatRoomId != "" && $widgetUIID != "" && $messageId != "" && $departmentId != "") {
+
                                                 $getAllAgentId = DepartmentAgentMap::where('department_id', $departmentId)->select('user_id')->get();
                                                 if (count($getAllAgentId) != 0) {
                                                     // foreach ($getAllAgentId as $agentId) {
@@ -1906,6 +2195,7 @@ class ChatController extends Controller
                                                         $this->saveMessageCacheData($body, $responseMessageCacheId, $file, $fileType, $fileUrl);        // save to message cache data
                                                         $updateMEssageCacheData = MessageCacheData::where('message_cache_id', $responseMessageCacheId)->update(['copy' => 2]);
                                                     }
+
                                                 } else {
                                                     return false;
                                                 }
@@ -1936,11 +2226,8 @@ class ChatController extends Controller
                                     $ch = curl_init();
                                     curl_setopt($ch, CURLOPT_URL, $url);
                                     curl_setopt($ch, CURLOPT_POST, 1);
-                                    curl_setopt(
-                                        $ch,
-                                        CURLOPT_POSTFIELDS,
-                                        "messageBody=$body&direction=2&user=$toNumber&chatRoomId=$getChatInfo->chat_room_id&time=$time&callFrom=shelf"
-                                    );
+                                    curl_setopt($ch, CURLOPT_POSTFIELDS,
+                                        "messageBody=$body&direction=2&user=$toNumber&chatRoomId=$getChatInfo->chat_room_id&time=$time&callFrom=shelf");
 
                                     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                                     $server_output = curl_exec($ch);
@@ -1967,17 +2254,34 @@ class ChatController extends Controller
                                     'message' => 'message not saved'
                                 ));
                             }
+
+
                         } else {
+
                         }
                     } else {
+
                     }
                 } else {
+
                 }
             } else {
-                return $this->errorResponse('Department not found');
+                return Response::json(array(
+                    'status' => false,
+                    'code' => 400,
+                    'response' => [],
+                    'error' => true,
+                    'message' => 'Department not found'
+                ));
             }
         } catch (\Exception $e) {
-            return $this->errorResponse($e->getMessage());
+            return Response::json(array(
+                'status' => false,
+                'code' => 400,
+                'response' => [],
+                'error' => true,
+                'message' => $e->getMessage()
+            ));
         }
     }
 
@@ -2076,35 +2380,26 @@ class ChatController extends Controller
                     $agentRooms['chats'][$key]['created_at'] = $chat->created_at;
                 }
                 $allRooms[] = $agentRooms;
+
             }
             $agents['rooms'] = $allRooms;
             $closedChats = array_merge($allRooms, $chatRoomsDetails);
-            return $this->successResponse('Agents with chatrooms !', $closedChats);
+            return Response::json(array(
+                'status' => true,
+                'error' => false,
+                'code' => 200,
+                'response' => $closedChats,
+                'message' => 'Agents with chatrooms !'
+            ));
         } else {
-            return $this->errorResponse('No Chant found !');
+            return Response::json(array(
+                'status' => false,
+                'error' => true,
+                'code' => 400,
+                'response' => [],
+                'message' => 'No Chant found !'
+            ));
         }
     }
 
-    protected function successResponse($message = "Success", $response = [], $code = 200)
-    {
-        return response()->json(array(
-            'status' => true,
-            'error' => false,
-            'code' => $code,
-            'response' => $response,
-            'message' => $message
-        ));
-    }
-
-
-    protected function errorResponse($message = "Oops, something went wrong", $code = 400, $response = [])
-    {
-        return response()->json(array(
-            'status' => false,
-            'code' => $code,
-            'error' => true,
-            'response' => $response,
-            'message' => $message
-        ));
-    }
 }

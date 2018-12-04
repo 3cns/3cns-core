@@ -8,6 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class AgentTransferHistory extends Model
 {
+
+    const STATUS_NO= 0;
+    const STATUS_YES = 1;
+
     /**
      * @var boolean
      */

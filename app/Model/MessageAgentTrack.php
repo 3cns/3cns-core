@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class MessageAgentTrack extends Model
 {
+
     /**
      * @var boolean
      */

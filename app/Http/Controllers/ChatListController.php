@@ -93,7 +93,7 @@ class ChatListController extends Controller
         $messageAgentTrack = $query->get();
 
         foreach ($messageAgentTrack as $key => $track) {
-            if ($contact = $track->clientInfo->contact) {
+            if ($contact = data_get($track, 'clientInfo.contact')) {
                 $clientNames[$key]['id'] = $contact->id;
                 $clientNames[$key]['name'] = $contact->name;
                 $clientNames[$key]['email'] = $contact->email;
@@ -127,11 +127,11 @@ class ChatListController extends Controller
         foreach ( $rooms as $room ) {
             $agentRooms['name'] = $room->chat_room_id;
             $agentRooms['status'] = $room->status;
-            if ($room->clientInfo->clientName->name != "") {
-                $agentRooms['client_name'] = $room->clientInfo->clientName->name;
-            } else {
-                $agentRooms['client_name'] = $room->clientInfo->clientName->phone;
-            }
+
+            $agentRooms['client_name'] = data_get($room, "clientInfo.clientName.name",
+                data_get($room, "clientInfo.clientName.phone","Unknown")
+            );
+
             $agentRooms['chat_time'] = $room->created_at;
             $agentRooms['chats'] = array();
             foreach ($room->allChat as $key => $chat) {
@@ -140,11 +140,7 @@ class ChatListController extends Controller
                 $agentRooms['chats'][$key]['direction'] = $chat->direction;
                 $agentRooms['chats'][$key]['roomNo'] = $room->chat_room_id;
                 if ($chat->direction == 1) {
-                    if ($room->clientInfo->clientName->name != "") {
-                        $agentRooms['chats'][$key]['user'] = $room->clientInfo->clientName->name;
-                    } else {
-                        $agentRooms['chats'][$key]['user'] = $room->clientInfo->clientName->phone;
-                    }
+                    $agentRooms['chats'][$key]['user'] = $agentRooms['client_name'];
                 }
                 if ($chat->direction == 2) {
                     $agentRooms['chats'][$key]['user'] = $chat->agentInfo->first_name;
@@ -321,11 +317,11 @@ class ChatListController extends Controller
                             $chatRooms['name'] = (string)$key;
                             $chatRooms['status'] = $messageAgentTract->status;
                             $chatRooms['chat_time'] = $messageAgentTract->created_at;
-                            if ($messageAgentTract->clientInfo->clientName->name != "") {
-                                $chatRooms['client_name'] = $messageAgentTract->clientInfo->clientName->name;
-                            } else {
-                                $chatRooms['client_name'] = $messageAgentTract->clientInfo->clientName->phone;
-                            }
+
+                            $chatRooms['client_name'] = data_get($messageAgentTract, "clientInfo.clientName.name",
+                                data_get($messageAgentTract, "clientInfo.clientName.phone","Unknown")
+                            );
+
                             foreach ($chatThreads as $chatKey => $chatThread) {
                                 if ($chatThread->id <= $transferedRoomDetail) {
                                     $chatRooms['chats'][$chatKey]['message'] = $chatThread->chat_thread;
@@ -335,11 +331,7 @@ class ChatListController extends Controller
                                     $chatRooms['chats'][$chatKey]['fileType'] = $chatThread->file_type;
                                     $chatRooms['chats'][$chatKey]['fileUrl'] = $chatThread->file_url;
                                     if ($chatThread->direction == 1) {
-                                        if ($messageAgentTract->clientInfo->clientName->name != "") {
-                                            $chatRooms['chats'][$chatKey]['user'] = $messageAgentTract->clientInfo->clientName->name;
-                                        } else {
-                                            $chatRooms['chats'][$chatKey]['user'] = $messageAgentTract->clientInfo->clientName->phone;
-                                        }
+                                        $chatRooms['chats'][$chatKey]['user'] = $chatRooms['client_name'];
                                     }
                                     if ($chatThread->direction == 2) {
                                         $chatRooms['chats'][$chatKey]['user'] = $chatThread->agentInfo->first_name;
@@ -369,11 +361,11 @@ class ChatListController extends Controller
                         }
                         $agentRooms['name'] = $room->chat_room_id;
                         $agentRooms['status'] = $room->status;
-                        if ($room->clientInfo->clientName->name != "") {
-                            $agentRooms['client_name'] = $room->clientInfo->clientName->name;
-                        } else {
-                            $agentRooms['client_name'] = $room->clientInfo->clientName->phone;
-                        }
+
+                        $agentRooms['client_name'] = data_get($room, "clientInfo.clientName.name",
+                            data_get($room, "clientInfo.clientName.phone","Unknown")
+                        );
+
                         $agentRooms['chat_time'] = $room->created_at;
                         $agentRooms['chats'] = array();
                         foreach ($room->allChat as $key => $chat) {
