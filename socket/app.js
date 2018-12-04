@@ -1,23 +1,26 @@
 const env = process.env.NODE_ENV
 const fs = require('fs');
-const app = require('express')();
+const axios = require('axios');
+const express = require('express')
+const socketIO = require('socket.io')
+const bodyParser = require('body-parser')
 
 const config = function(env) {
     const config = {
         production: {
-            host: "https://dugong.telemojo.net/api/v1/",
+            host: "https://dugong.telemojo.net",
             privkey: '/etc/letsencrypt/live/dugong.telemojo.net/privkey.pem',
             cert: '/etc/letsencrypt/live/dugong.telemojo.net/cert.pem',
         },
 
         stage: {
-            host: "https://dugong.telemojo.net/api/v1/",
+            host: "https://dugong.telemojo.net",
             privkey: '/etc/letsencrypt/live/dugong.telemojo.net/privkey.pem',
             cert: '/etc/letsencrypt/live/dugong.telemojo.net/cert.pem',
         },
 
         development: {
-            host: "https://dev.3cns.com/api/v1/"
+            host: "http://dev.3cns.com"
         }
     }
     return config[env]
@@ -33,26 +36,50 @@ const options = function(fs, config){
     return {}
 }(fs, config)
 
-const server = require('https').createServer(options, app);
-const io = require('socket.io')(server);
-const axios = require('axios');
+//----------------------------------------------------------
+// Consts
+//-------------------------------------------------------
+const API_URL = `${config.host}/api/v1/`
 
-const API_URL = config.host
-
-// parse application/x-www-form-urlencoded
-const bodyParser = require('body-parser');
+//----------------------------------------------------------
+// Setup Express App
+//-------------------------------------------------------
+const app = express();
 app.use(bodyParser.urlencoded({extended:false}));
 app.use(bodyParser.json());
 
-
 app.get('/hello', function (req, res) {
-    console.log('Someone Said Hello');
+    console.log('Someone Said Hello', req);
     res.status(200).json({
-        message: "hello"
+        message: "Hi"
     });
 });
 
-/** Chat App */
+//----------------------------------------------------------
+// Setup Socket
+//-------------------------------------------------------
+const server = function(app, options) {
+    if(options.key && options.cert) {
+        return require('https').createServer(options, app);
+    }
+    return require('http').Server(app)
+}(app, options)
+
+const io = socketIO(server,  { origins: `*` });
+io.origins((origin, callback) => {
+    // if (origin !== config.host) {
+    //     return callback('origin not allowed', false);
+    // }
+    console.log("Allowing Origin", origin)
+    callback(null, true);
+});
+
+
+
+
+//----------------------------------------------------------
+// Chat App
+//-------------------------------------------------------
 io.on('connection', function (socket) {
     console.log('User connected');
 

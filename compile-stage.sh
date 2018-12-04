@@ -12,4 +12,4 @@ cd ${APP_ROOT}/resources/assets/chat-widget
 npm run stage
 
 cd ${APP_ROOT}
-npm run stage
+npm run production

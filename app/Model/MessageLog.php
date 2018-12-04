@@ -19,6 +19,12 @@ class MessageLog extends Model
     protected $table = 'message_log';
 
     public function clientName(){
-        return $this->hasOne('App\Model\ContactList','id','contact_list_id')->groupBy('phone');
+        return $this->contact()
+            ->groupBy('phone')
+        ;
+    }
+
+    public function contact() {
+        return $this->hasOne('App\Model\ContactList','id','contact_list_id');
     }
 }

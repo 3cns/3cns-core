@@ -43,10 +43,11 @@ php artisan queue:work
 
 
 ### WARNING
-- [ ] A Large number of methods in Chat Controller Do not return any response, they should always return something.
+- [x] A Large number of methods in Chat Controller Do not return any response, they should always return something.
 - [ ] Refactor meaningless numbers into class consts so their meaning is clear.
 - [ ] Refactor if statements using count() to use empty() so it won't break w/ PHP 7.2
-- [ ] Add Recompile Script
+- [x] Add Recompile Script
+- [x] Fix Naming conventions of Models/Relations/DB Tables to aid in future dev clairity as to functionality.
 
 ### Improvement
 - [ ] Refactor duplicated code for success / error responses on controller

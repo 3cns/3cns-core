@@ -30,13 +30,18 @@ use App\Exceptions\EntityConflictException;
 use App\Exceptions\HttpBadRequestException;
 use Illuminate\Database\QueryException;
 
+use Exception;
+
 class ChatListController extends Controller
 {
     public function agentDepartmentList(Request $request)
     {
         $chatRoomId = $request->chatRoomId;
         if ($chatRoomId != "") {
-            $getDepartmentDetails = MessageAgentTrack::where('chat_room_id', $chatRoomId)->with('getWidget.widgetDepartment.departmentDetails.departmentAgents.agentDetails')->first();
+            $getDepartmentDetails = MessageAgentTrack::where('chat_room_id', $chatRoomId)
+                ->with('getWidget.widgetDepartment.departmentDetails.departmentAgents.agentDetails')
+                ->first();
+
             $userId = $getDepartmentDetails->agent_id;
             $agentDepartmentData = [];
 
@@ -70,43 +75,40 @@ class ChatListController extends Controller
     public function getContactList(Request $request)
     {
         $agentId = $request->agentId;
-        if ($agentId != "") {
 
-            $allClientNames = MessageAgentTrack::where('agent_id', $agentId)->with('clientInfo.clientName')->where('status', '!=', 3)->get();
-            $clientNamesArr = [];
-            foreach ($allClientNames as $key => $value) {
-                if (isset($value->clientInfo->clientName)) {
-                    $clientNamesArr[$key]['name'] = $value->clientInfo->clientName->name;
-                    $clientNamesArr[$key]['email'] = $value->clientInfo->clientName->email;
-                    $clientNamesArr[$key]['phone'] = $value->clientInfo->clientName->phone;
-                }
-            }
-
-            $clientNames = array();
-            $i = 0;
-            $key_array = array();
-            $key = 'phone';
-            foreach ($clientNamesArr as $val) {
-                if (!in_array($val[$key], $key_array)) {
-                    $key_array[$i] = $val[$key];
-                    $clientNames[] = $val;
-                }
-                $i++;
-            }
-
-            if (count($clientNames) != 0) {
-
-                $response = array('code' => 200, 'error' => false, 'response' => $clientNames, 'status' => true, 'message' => 'List of client names !');
-            } else {
-
-                $response = array('code' => 400, 'error' => true, 'response' => [], 'status' => false, 'message' => 'No Client Found !');
-            }
-        } else {
-
-            $response = array('code' => 400, 'error' => true, 'response' => [], 'status' => false, 'message' => 'Invalid Token !');
+        if (empty($agentId)) {
+            return response()->json([
+                'code' => 400,
+                'error' => true,
+                'response' => [],
+                'status' => false,
+                'message' => 'Invalid Token !'
+            ]);
         }
 
-        return Response()->json($response);
+        $query = MessageAgentTrack::where('agent_id', $agentId)
+            ->with(['clientInfo.contact'])
+            ->where('status', '!=', 3);
+
+        $messageAgentTrack = $query->get();
+
+        foreach ($messageAgentTrack as $key => $track) {
+            if ($contact = $track->clientInfo->contact) {
+                $clientNames[$key]['id'] = $contact->id;
+                $clientNames[$key]['name'] = $contact->name;
+                $clientNames[$key]['email'] = $contact->email;
+                $clientNames[$key]['phone'] = $contact->phone;
+            }
+        }
+
+        if (count($clientNames) != 0) {
+            $response = array_values(array_unique($clientNames, SORT_REGULAR));
+            $data = [ 'code' => 200, 'error' => false, 'response' => $response, 'status' => true, 'message' => 'List of client names !' ];
+        } else {
+            $data = [ 'code' => 400, 'error' => true, 'response' => [], 'status' => false, 'message' => 'No Client Found !' ];
+        }
+
+        return Response()->json($data);
     }
 
     /**
@@ -119,10 +121,10 @@ class ChatListController extends Controller
         $agentId = $request->agentId;
         $allAgents = [];
 
-        $rooms = MessageAgentTrack::where('agent_id', $agentId)->with('clientInfo.clientName', 'allChat.agentInfo')->orderBy('id', 'desc')->get();
+        $rooms = MessageAgentTrack::where('agent_id', $agentId)->with(['clientInfo.clientName', 'allChat.agentInfo'])->orderBy('id', 'desc')->get();
         $allRooms = [];
         $agents['agent_id'] = $agentId;
-        foreach ($rooms as $room) {
+        foreach ( $rooms as $room ) {
             $agentRooms['name'] = $room->chat_room_id;
             $agentRooms['status'] = $room->status;
             if ($room->clientInfo->clientName->name != "") {
@@ -211,13 +213,15 @@ class ChatListController extends Controller
                         }
                         $agentRooms['name'] = $room->chat_room_id;
                         $agentRooms['status'] = $room->status;
-                        if ($room->clientInfo->clientName->name != "") {
-                            $agentRooms['client_name'] = $room->clientInfo->clientName->name;
-                        } else {
-                            $agentRooms['client_name'] = $room->clientInfo->clientName->phone;
-                        }
+
+                        $client_name = data_get($room, 'clientInfo.clientName.name',
+                            data_get($room, 'clientInfo.clientName.name', "Unknown")
+                        );
+
+                        $agentRooms['client_name'] = $client_name;
                         $agentRooms['chat_time'] = $room->created_at;
                         $agentRooms['chats'] = array();
+
                         foreach ($room->allChat as $key => $chat) {
 
                             $agentRooms['chats'][$key]['message'] = $chat->chat_thread;
@@ -226,13 +230,11 @@ class ChatListController extends Controller
                             $agentRooms['chats'][$key]['isMMS'] = $chat->is_mms;
                             $agentRooms['chats'][$key]['fileType'] = $chat->file_type;
                             $agentRooms['chats'][$key]['fileUrl'] = $chat->file_url;
+
                             if ($chat->direction == 1) {
-                                if ($room->clientInfo->clientName->name != "") {
-                                    $agentRooms['chats'][$key]['user'] = $room->clientInfo->clientName->name;
-                                } else {
-                                    $agentRooms['chats'][$key]['user'] = $room->clientInfo->clientName->phone;
-                                }
+                                $agentRooms['chats'][$key]['user'] = $client_name;
                             }
+
                             if ($chat->direction == 2) {
                                 $agentRooms['chats'][$key]['user'] = $chat->agentInfo->first_name;
                             }
